@@ -1,14 +1,14 @@
-"""Cerebellar Resevoir Dynamics and COntext-Dependent Population Separation. 
+"""Cerebellar Reservoir Dynamics and Context-Dependent Population Separation. 
 
-This script implements a computaitonal simulation inspired by Rossert et al. 
-to analyse recurrent resevoir dynamics and timing within the cerebellar cortex. 
+This script implements a computational simulation inspired by Rossert et al. 
+to analyse recurrent reservoir dynamics and timing within the cerebellar cortex. 
 It evaluates how subtle perturbations in context vectors alter recurrent network states
 and drive high-dimensional population separation over time. 
 
 Key Features: 
   - Inhibitory recurrent network simulation (N=1000 neurons) with synaptic decay. 
-  - Context-dependent modulation (COntext A vs Context B) on time-series inputs. 
-  - Metrics to calcualte Euclidean population distances and state trajectory separation. 
+  - Context-dependent modulation (Context A vs Context B) on time-series inputs. 
+  - Metrics to calculate Euclidean population distances and state trajectory separation. 
   - Graphical visualizations tracking mean firing rates, population distance 
     variablity, and activity diferentiation matrices. 
 
@@ -45,7 +45,7 @@ x[1100:1150] = 1 # 50 ms pulse when dt = 1 ms
 I0 = np.random.normal(1.0, 0.1, N) # baseline input for each neuron
 
 f = np.ones(N)
-f[:N//2] = -1 # half the neurons decrease instead of increase
+f[: N//2] = -1 # half the neurons decrease instead of increase
 np.random.shuffle(f)
 
 # Context Vectors
