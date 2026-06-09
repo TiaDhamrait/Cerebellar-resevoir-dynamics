@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Cerebellar Resevoir Dynamics and COntext-Dependent Population Separation. 
 
 This script implements a computaitonal simulation inspired by Rossert et al. 
