@@ -1,0 +1,453 @@
+# -*- coding: utf-8 -*-
+"""Cerebellar Resevoir Dynamics and COntext-Dependent Population Separation. 
+
+This script implements a computaitonal simulation inspired by Rossert et al. 
+to analyse recurrent resevoir dynamics and timing within the cerebellar cortex. 
+It evaluates how subtle perturbations in context vectors alter recurrent network states
+and drive high-dimensional population separation over time. 
+
+Key Features: 
+  - Inhibitory recurrent network simulation (N=1000 neurons) with synaptic decay. 
+  - Context-dependent modulation (COntext A vs Context B) on time-series inputs. 
+  - Metrics to calcualte Euclidean population distances and state trajectory separation. 
+  - Graphical visualizations tracking mean firing rates, population distance 
+    variablity, and activity diferentiation matrices. 
+
+  Author: Tia Dhamrait
+  Program: B.Sc Neuroscience, McMaster University
+  Date: April 2026 
+
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+np.random.seed(0) # fixes all randomness
+
+# PARAMETERS
+
+N = 1000 # number of neurons
+T = 2000 # number of time steps
+dt = 0.001 # time step
+tau = 0.05 # synaptic decay time constant
+noise_level = 0
+connection_prob = 0.4
+weight_strength = 1.4 #1.4
+baseline = 1.0
+
+A = (np.random.rand(N,N) < connection_prob).astype(float) # NXN matrix of random numbers between 0 and 1
+W = A * (2 * weight_strength / N) # all inhibitory weights are positive; normalization implemented
+
+## EXTERNAL INPUT
+
+x = np.zeros(T) # one input signal over time
+x[1100:1150] = 1 # 50 ms pulse when dt = 1 ms
+
+I0 = np.random.normal(1.0, 0.1, N) # baseline input for each neuron
+
+f = np.ones(N)
+f[:N//2] = -1 # half the neurons decrease instead of increase
+np.random.shuffle(f)
+
+# Context Vectors
+
+context_A = np.zeros(N)
+context_B = np.zeros(N)
+
+# picking two random neurons
+idx = np.random.choice(N, 2, replace=False)
+
+context_A[idx[0]] = 1
+context_A[idx[1]] = -1
+context_B[idx[0]]= -1
+context_B[idx[1]] = 1
+
+I = np.zeros((T, N))
+
+for t in range(T):
+  for i in range(N):
+    I[t, i] = max(0.0, I0[i] + f[i] *0.1*I0[i] * x[t])
+
+## MAIN EQUATION LOOP
+
+def run_simulation(I, W, context_vector, T, N, dt, tau, noise_level, noise_matrix=None):
+    """Simulates the recurrent network trajectory over time with synaptic decay.
+
+    This function executes the main equation loop for the reservoir model, applying
+    time-series external inputs, fixed recurrent weights, historical decay factors, 
+    and explicit contextual vectors to calculate population firing rates at each step.
+
+    Parameters
+    ----------
+    I : numpy.ndarray
+        Shape (T, N) matrix representing external stimulus inputs for each neuron over time.
+    W : numpy.ndarray
+        Shape (N, N) connectivity weight matrix representing recurrent inhibitory connections.
+    context_vector : numpy.ndarray
+        Shape (N,) vector containing the specific contextual perturbation values.
+    T : int
+        Total number of discrete time steps to execute in the simulation.
+    N : int
+        Total number of neurons comprising the recurrent network population.
+    dt : float
+        The temporal step size (increment) utilized for integration (e.g., 0.001 seconds).
+    tau : float
+        Synaptic decay time constant dictating the exponential loss of past network activity.
+    noise_level : float
+        Scaling factor defining the amplitude variance of random Gaussian noise.
+    noise_matrix : numpy.ndarray, optional
+        Pre-generated shape (T, N) matrix to apply consistent noise conditions across trials.
+
+    Returns
+    -------
+    numpy.ndarray
+        Shape (T, N) matrix containing the calculated firing rates for all neurons 
+        across every simulated time step.
+    """  
+  
+  z = np.zeros((T, N))
+
+  for t in range(1, T):
+    start = max(1, t-100)
+    small_sum = np.zeros(N)
+
+    if noise_matrix is not None:
+      noise = noise_matrix[t]
+    else:
+      noise = noise_level * np.random.normal(0, 0.5, N)
+
+    for s in range(start, t+1):
+      decay = np.exp(-((t-s)*dt)/tau)
+      small_sum += decay*z[s-1]
+
+    z[t] = np.maximum(0.0, I[t] + context_vector - decay * np.matmul(W, small_sum) + noise)
+
+  return z
+
+## Controlled noise
+
+noise_matrix = noise_level * np.random.normal(0, 0.5, (T, N))
+
+## RUNNING BOTH CONTEXTS
+z_A = run_simulation(I, W, context_A, T, N, dt, tau, noise_level, noise_matrix)
+z_B = run_simulation(I, W, context_B, T, N, dt, tau, noise_level, noise_matrix)
+
+## Plotting figures
+
+# neuron firing rates with different weights
+
+
+neurons = np.random.choice(N, 500, replace=False)
+
+#plt.subplot(2,1,1)
+plt.plot(z_B[1000:2000, neurons])
+
+plt.plot([100, 150], [0.45, 0.45], 'k', linewidth=4)
+plt.ylim([0,.5])
+plt.xlim([0,500])
+plt.xlabel("Time (ms)")
+plt.ylabel("Firing rate")
+plt.title(f"w = {weight_strength}")
+#plt.subplot(2,1,2)
+#plt.plot(I[1000:1400, neurons])
+#plt.xlim([0,500])
+plt.show()
+
+mean_A = np.mean(z_A, axis=1)
+mean_B = np.mean(z_B, axis=1)
+
+plt.figure(figsize=(8,5))
+plt.plot(mean_A[1000:1500], label="Context A")
+plt.plot(mean_B[1000:1500], label="Context B")
+plt.xlabel("Time step")
+plt.ylabel("Mean firing rate")
+plt.title("Mean population activity across contexts")
+plt.legend()
+plt.show()
+
+distance = np.sqrt(np.sum((z_A-z_B)**2, axis=1)/N)
+
+plt.figure(figsize=(8,5))
+plt.plot(distance[1000:1500])
+plt.xlabel("Time step")
+plt.ylabel("Normalized population distance")
+plt.title("Population separation between contexts")
+plt.show()
+
+plt.figure(figsize=(10,5))
+plt.imshow((z_A[1100:1150]).T,
+           aspect='auto',
+           origin='lower',
+           cmap = 'bwr',
+           vmin=-0.05,
+           vmax=0.05)
+plt.xlabel("Time (ms)")
+plt.ylabel("Neuron")
+plt.title("Difference in activity between Context A and B")
+plt.colorbar(label="Activity difference")
+plt.show()
+
+plt.figure(figsize=(10,5))
+plt.imshow((z_B[1100:1150]).T,
+           aspect='auto',
+           origin='lower',
+           cmap = 'bwr',
+           vmin=-0.05,
+           vmax=0.05)
+plt.xlabel("Time (ms)")
+plt.ylabel("Neuron")
+plt.title("Difference in activity between Context A and B")
+plt.colorbar(label="Activity difference")
+plt.show()
+
+diff = z_A[1100:1250] - z_B[1100:1250]
+
+plt.figure(figsize=(10,5))
+plt.imshow(diff.T,
+           aspect='auto',
+           origin='lower',
+           cmap = 'bwr',
+           vmin=-0.05,
+           vmax=0.05)
+plt.xlabel("Time (ms)")
+plt.ylabel("Neuron")
+plt.title("Context-dependent difference in population activity")
+plt.colorbar(label="Activity difference")
+plt.show()
+
+plt.figure(figsize=(8,5))
+plt.plot(distance[1000:1500])
+plt.xlabel("Time(ms)")
+plt.ylabel("Population distance")
+plt.title("Separation between contexts")
+plt.show()
+
+context_zero = np.zeros(N)
+
+z_1 = run_simulation(I, W, context_zero, T, N, dt, tau, noise_level)
+z_2 = run_simulation(I, W, context_zero, T, N, dt, tau, noise_level)
+
+distance_control = np.sqrt(np.sum((z_1-z_2)**2, axis=1)/N)
+
+plt.plot(distance_control[1100:1250])
+plt.title("Control: No context difference")
+plt.xlabel("Time (ms)")
+plt.ylabel("Population distance")
+plt.show()
+
+context_strengths = [0.0, 0.1, 0.2, 0.5, 1.0]
+num_trials = 5
+mean_distances = []
+
+for strength in context_strengths:
+  trial_distances = []
+
+  for trial in range(num_trials):
+    context_A = np.zeros(N)
+    context_B = np.zeros(N)
+
+    idx = np.random.choice(N, 2, replace=False) # using same neurons for comparision
+    context_A[idx[0]] = strength
+    context_A[idx[1]] = -strength
+
+    context_B[idx[0]]= -strength
+    context_B[idx[1]] = strength
+
+    z_A = run_simulation(I, W, context_A, T, N, dt, tau, noise_level)
+    z_B = run_simulation(I, W, context_B, T, N, dt, tau, noise_level)
+
+    distance = np.sqrt(np.sum((z_A-z_B)**2, axis=1)/N)
+
+    trial_distances.append(np.mean(distance[1150:1300]))
+
+  mean_distances.append(np.mean(trial_distances))
+
+plt.figure()
+plt.plot(context_strengths, mean_distances, marker='o')
+plt.xlabel("Context strength")
+plt.ylabel("Mean population distance (post stimulus)")
+plt.title("Effect of context strength on population distance")
+plt.show()
+
+num_trials = 30
+all_distances = []
+
+# same noise across trials/contexts is optional; omit if not using controlled noise
+for trial in range(num_trials):
+    context_A = np.zeros(N)
+    context_B = np.zeros(N)
+
+    idx = np.random.choice(N, 2, replace=False)
+
+    context_A[idx[0]] = 1
+    context_A[idx[1]] = -1
+
+    context_B[idx[0]] = -1
+    context_B[idx[1]] = 1
+
+    z_A = run_simulation(I, W, context_A, T, N, dt, tau, noise_level)
+    z_B = run_simulation(I, W, context_B, T, N, dt, tau, noise_level)
+
+    distance = np.sqrt(np.sum((z_A - z_B) ** 2, axis=1) / N)
+    all_distances.append(distance)
+
+all_distances = np.array(all_distances)
+
+mean = np.mean(all_distances, axis=0)
+std = np.std(all_distances, axis=0)
+
+time = np.arange(T) - 1100  # 0 ms = stimulus onset
+
+start = 50  # trims early initialization artifact
+plt.figure(figsize=(7, 5))
+plt.plot(time[start:], mean[start:], label="Mean distance")
+plt.fill_between(
+    time[start:],
+    mean[start:] - std[start:],
+    mean[start:] + std[start:],
+    alpha=0.3
+)
+plt.axvline(0, linestyle="--", color="black", alpha=0.6)
+
+plt.xlabel("Time relative to stimulus onset (ms)")
+plt.ylabel("Population distance")
+plt.title("Population separation across random context perturbations")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+ratios = []
+distances = []
+
+context_strengths = [0.1, 0.5, 1.0, 2.0, 3.0]
+num_trials = 3
+
+for strength in context_strengths:
+
+    trial_distances = []
+    trial_ratios = []
+
+    for trial in range(num_trials):
+
+        # --- Context setup ---
+        context_A = np.zeros(N)
+        context_B = np.zeros(N)
+
+        idx = np.random.choice(N, 2, replace=False)
+
+        context_A[idx[0]] = strength
+        context_A[idx[1]] = -strength
+
+        context_B[idx[0]] = -strength
+        context_B[idx[1]] = strength
+
+        # --- Run simulations ---
+        z_A = run_simulation(I, W, context_A, T, N, dt, tau, noise_level)
+        z_B = run_simulation(I, W, context_B, T, N, dt, tau, noise_level)
+
+        # --- Population distance ---
+        distance_time = np.sqrt(np.sum((z_A - z_B)**2, axis=1) / N)
+        distance = np.mean(distance_time[1150:1300])  # post-stimulus window
+
+        trial_distances.append(distance)
+
+        # --- Norms ---
+        input_norm = np.mean([np.linalg.norm(I[t, :]) for t in range(1100, 1300)])
+        context_norm = np.linalg.norm(context_A)
+
+        if context_norm == 0:
+            ratio = 0
+        else:
+            ratio = input_norm/context_norm
+
+        trial_ratios.append(ratio)
+
+    # average across trials
+    distances.append(np.mean(trial_distances))
+    ratios.append(np.mean(trial_ratios))
+
+
+# --- Plot ---
+plt.figure()
+plt.plot(ratios, distances, marker='o')
+plt.xlabel("Input / Context Norm Ratio")
+plt.ylabel("Mean Population Distance (post stimulus)")
+plt.title("Generalization vs Differentiation as a Function of Relative Strength")
+plt.show()
+
+ratios = []
+distances = []
+
+context_strengths = [0.1, 0.5, 1.0]
+input_deltas = [0.0, 0.2, 0.4]
+
+gain = np.random.normal(1.0, 0.1, N)
+
+            # ----- norm of condition differences -----
+input_diff_norm = np.mean([
+    np.linalg.norm(I_A[t, :] - I_B[t, :]) for t in range(1100, 1300)
+    ])
+
+num_trials = 3
+base_input_amp = 1.0
+
+for context_strength in context_strengths:
+    for delta_input in input_deltas:
+
+        trial_distances = []
+        trial_ratios = []
+
+        for trial in range(num_trials):
+
+            # ----- context difference -----
+            context_A = np.zeros(N)
+            context_B = np.zeros(N)
+
+            idx = np.random.choice(N, 2, replace=False)
+
+            context_A[idx[0]] = context_strength
+            context_A[idx[1]] = -context_strength
+
+            context_B[idx[0]] = -context_strength
+            context_B[idx[1]] = context_strength
+
+            # ----- input difference -----
+            x_A = np.zeros(T)
+            x_B = np.zeros(T)
+
+            x_A[1100:1150] = base_input_amp + delta_input
+            x_B[1100:1150] = base_input_amp - delta_input
+
+            I_A = np.zeros((T, N))
+            I_B = np.zeros((T, N))
+
+            for t in range(T):
+                I_A[t, :] = x_A[t] * gain
+                I_B[t, :] = x_B[t] * gain
+
+            # ----- run simulations -----
+            z_A = run_simulation(I_A, W, context_A, T, N, dt, tau, noise_level)
+            z_B = run_simulation(I_B, W, context_B, T, N, dt, tau, noise_level)
+
+            # ----- population distance -----
+            distance_time = np.sqrt(np.sum((z_A - z_B) ** 2, axis=1) / N)
+            mean_distance = np.mean(distance_time[1150:1300])
+
+
+
+            context_diff_norm = np.linalg.norm(context_A - context_B)
+
+            ratio = input_diff_norm / context_diff_norm
+
+            trial_distances.append(mean_distance)
+            trial_ratios.append(ratio)
+
+        distances.append(np.mean(trial_distances))
+        ratios.append(np.mean(trial_ratios))
+
+plt.figure()
+plt.scatter(ratios, distances)
+plt.xlabel("||I_A - I_B|| / ||c_A - c_B||")
+plt.ylabel("Mean population distance (post stimulus)")
+plt.title("Population separation vs relative input/context difference")
+plt.show()
